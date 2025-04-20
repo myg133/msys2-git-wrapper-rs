@@ -1,4 +1,4 @@
-use std::process::Command;
+use std::{io::Write, process::Command};
 
 fn main() {
     let mut args: Vec<String> = std::env::args().collect();
@@ -6,28 +6,30 @@ fn main() {
 
     if args.contains(&String::from("rev-parse")) || args.contains(&String::from("ls-files")) {
         let git_output = Command::new("git")
-           .args(&args)
-           .output()
-           .expect("Failed to execute git rev-parse");
+            .args(&args)
+            .output()
+            .expect("Failed to execute git rev-parse");
         if git_output.status.success() {
             let unix_path = String::from_utf8_lossy(&git_output.stdout);
             let windows_path_output = Command::new("cygpath")
-               .args(&["-w", unix_path.trim()])
-               .output()
-               .expect("Failed to convert path using cygpath");
-            let windows_path = String::from_utf8_lossy(&windows_path_output.stdout).trim().to_string();
+                .args(&["-w", unix_path.trim()])
+                .output()
+                .expect("Failed to convert path using cygpath");
+            let windows_path = String::from_utf8_lossy(&windows_path_output.stdout)
+                .trim()
+                .to_string();
             println!("{}", windows_path);
         } else {
             eprintln!("Command failed with error: {}", git_output.status);
         }
     } else {
         let output = Command::new("git")
-           .args(&args)
-           .output()
-           .expect("Failed to execute git command");
-        println!("{}", String::from_utf8_lossy(&output.stdout));
+            .args(&args)
+            .output()
+            .expect("Failed to execute git command");
         if output.status.success() {
-            println!("{}", String::from_utf8_lossy(&output.stdout));
+            std::io::stdout().write_all(&output.stdout).unwrap();
+            // println!("{}", String::from_utf8_lossy(&output.stdout));
         } else {
             eprintln!("Command failed with error: {}", output.status);
         }
