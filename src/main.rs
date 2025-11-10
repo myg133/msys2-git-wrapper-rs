@@ -20,7 +20,7 @@ fn main() {
                 .to_string();
             println!("{}", windows_path);
         } else {
-            eprintln!("Command failed with error: {}", git_output.status);
+            std::io::stderr().write_all(&git_output.stderr).unwrap();
         }
     } else {
         let output = Command::new("git")
@@ -31,7 +31,7 @@ fn main() {
             std::io::stdout().write_all(&output.stdout).unwrap();
             // println!("{}", String::from_utf8_lossy(&output.stdout));
         } else {
-            eprintln!("Command failed with error: {}", output.status);
+            std::io::stderr().write_all(&output.stderr).unwrap();
         }
     }
 }
