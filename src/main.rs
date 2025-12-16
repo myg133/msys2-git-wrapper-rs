@@ -9,7 +9,7 @@ fn main() -> io::Result<()> {
 
     if args.contains(&"rev-parse".to_string()) || args.contains(&"ls-files".to_string()) {
         handle_path_conversion(&args)
-    } else if args.get(0) == Some(&"commit".to_string()) {
+    } else if args.iter().any(|arg| arg == "commit") {
         handle_commit_command(&args)
     } else {
         handle_generic_command(&args)
@@ -17,16 +17,12 @@ fn main() -> io::Result<()> {
 }
 
 fn handle_commit_command(args: &[String]) -> io::Result<()> {
-    // 确保包含必要的配置参数
-    let mut full_args = vec![];
-    full_args.extend(args.iter().map(|s| s.as_str()));
-    
     // 检查是否包含 --file - 参数
     let has_file_arg = args.windows(2).any(|w| w[0] == "--file" && w[1] == "-");
     
     // 准备子进程
     let mut child = Command::new("git")
-        .args(&full_args)
+        .args(args)
         .stdin(if has_file_arg { Stdio::piped() } else { Stdio::inherit() })
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
@@ -35,22 +31,27 @@ fn handle_commit_command(args: &[String]) -> io::Result<()> {
 
     // 如果有 --file - 参数，传递标准输入
     if has_file_arg {
-        // 使用缓冲读写器提高效率
-        let mut stdin = io::stdin().lock();
-        let mut child_stdin = child.stdin.take().unwrap();
-        
-        // 使用缓冲复制
-        let mut buffer = [0; 4096];
-        loop {
-            let bytes_read = stdin.read(&mut buffer)?;
-            if bytes_read == 0 {
-                break;
+        // 获取子进程的标准输入管道
+        if let Some(mut child_stdin) = child.stdin.take() {
+            // 使用缓冲复制
+            let mut buffer = [0; 4096];
+            loop {
+                let bytes_read = io::stdin().read(&mut buffer)?;
+                if bytes_read == 0 {
+                    break;
+                }
+                child_stdin.write_all(&buffer[..bytes_read])?;
             }
-            child_stdin.write_all(&buffer[..bytes_read])?;
+            
+            // 确保所有数据都写入并关闭管道
+            child_stdin.flush()?;
+            drop(child_stdin); // 显式关闭管道
+        } else {
+            return Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "Failed to get child stdin"
+            ));
         }
-        
-        // 确保所有数据都写入
-        child_stdin.flush()?;
     }
 
     let status = child.wait()?;
