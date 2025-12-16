@@ -1,6 +1,7 @@
 use std::{
     io::{self, Read, Write},
     process::{Command, Stdio},
+    os::windows::process::CommandExt,
 };
 
 fn main() -> io::Result<()> {
@@ -17,7 +18,7 @@ fn main() -> io::Result<()> {
 
 fn handle_commit_command(args: &[String]) -> io::Result<()> {
     // 确保包含必要的配置参数
-    let mut full_args = vec!["-c", "user.useConfigOnly=true"];
+    let mut full_args = vec![];
     full_args.extend(args.iter().map(|s| s.as_str()));
     
     // 检查是否包含 --file - 参数
@@ -29,22 +30,27 @@ fn handle_commit_command(args: &[String]) -> io::Result<()> {
         .stdin(if has_file_arg { Stdio::piped() } else { Stdio::inherit() })
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
+        .creation_flags(0x08000000) // 禁用Windows控制台缓冲区
         .spawn()?;
 
     // 如果有 --file - 参数，传递标准输入
     if has_file_arg {
-        let mut message = String::new();
-        io::stdin().read_to_string(&mut message)?;
+        // 使用缓冲读写器提高效率
+        let mut stdin = io::stdin().lock();
+        let mut child_stdin = child.stdin.take().unwrap();
         
-        // 验证消息非空（除非允许空消息）
-        let allow_empty = args.contains(&"--allow-empty-message".to_string());
-        if message.trim().is_empty() && !allow_empty {
-            eprintln!("错误：提交消息不能为空");
-            std::process::exit(1);
+        // 使用缓冲复制
+        let mut buffer = [0; 4096];
+        loop {
+            let bytes_read = stdin.read(&mut buffer)?;
+            if bytes_read == 0 {
+                break;
+            }
+            child_stdin.write_all(&buffer[..bytes_read])?;
         }
         
-        let mut stdin = child.stdin.take().unwrap();
-        stdin.write_all(message.as_bytes())?;
+        // 确保所有数据都写入
+        child_stdin.flush()?;
     }
 
     let status = child.wait()?;
